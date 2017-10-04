@@ -1,0 +1,7 @@
+prospectors.d/
+data/
+beats
+build
+logs/
+/collectbeat
+/collectbeat.test

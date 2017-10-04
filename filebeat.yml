@@ -1,0 +1,31 @@
+filebeat.config.prospectors:
+  enabled: true
+  path: prospectors.d/*.yml
+  reload: 
+    enabled: true
+    period: 5s
+
+filebeat.discovery:
+  kubernetes:
+    namespace: ${NAMESPACE}
+    host: ${NODE}
+    in_cluster: false #comment for running as a pod
+    kube_config: ${HOME}/.kube/config #comment for running as a pod
+
+processors:
+- add_kubernetes_metadata:
+    namespace: ${NAMESPACE}
+    host: ${NODE}
+    in_cluster: false #comment for running as a pod
+    kube_config: ${HOME}/.kube/config #comment for running as a pod
+    sync_period: 1m
+
+fields_under_root: true
+fields:
+  kubernetes:
+    cluster: 
+      name: ${CLUSTER}
+    node: 
+      name: ${NODE}
+
+output.console.pretty: true
