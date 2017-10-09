@@ -83,7 +83,6 @@ func (l *PodLogAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon
 	}
 
 	ns := l.getNamespace(pod)
-	globalPaths := make([]string, 0)
 
 	for _, container := range pod.GetStatus().GetContainerStatuses() {
 		name := container.GetName()
@@ -123,11 +122,6 @@ func (l *PodLogAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon
 			setNamespace(ns, containerConfig)
 		}
 
-		if len(paths) == 0 && containerPattern == "" {
-			globalPaths = append(globalPaths, path)
-			continue
-		}
-
 		if len(paths) == 0 {
 			// Set json only when listening to stdout
 			setJsonLog(containerConfig)
@@ -139,32 +133,6 @@ func (l *PodLogAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon
 
 		rawConfigs = append(rawConfigs, containerConfig)
 		debug("Config for pod %s, container %s is %v", pod.Metadata.GetName(), name, containerConfig)
-	}
-
-	if len(globalPaths) != 0 {
-		globalConfig := map[string]interface{}{}
-		err := l.baseConfig.Unpack(globalConfig)
-		if err != nil {
-			logp.Err("Unable to unpack config for pod %s due to error: %v", pod.GetMetadata().GetName(), err)
-			return holders
-		}
-
-		// Add conditional when custom file path is implemented
-		setJsonLog(globalConfig)
-
-		globalConfig["paths"] = globalPaths
-		globalPattern := l.getPattern(pod, "")
-
-		if globalPattern != "" {
-			globalNegate := l.getNegate(pod, "")
-			globalMatch := l.getMatch(pod, "")
-
-			setMultilineConfig(globalConfig, globalPattern, globalNegate, globalMatch)
-		}
-
-		setNamespace(ns, globalConfig)
-		rawConfigs = append(rawConfigs, globalConfig)
-		debug("Config for pod %s is %v", pod.Metadata.GetName(), globalConfig)
 	}
 
 	config, err := common.NewConfigFrom(rawConfigs)
