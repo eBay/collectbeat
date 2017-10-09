@@ -106,36 +106,32 @@ func (p *PodAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon.Co
 	mtimeout := p.getTimeout(pod)
 	mverify := p.getInsecureSkipVerify(pod)
 
-	module := mb.ModuleConfig{
-		Module:     mtype,
-		MetricSets: msets,
-		Hosts:      mendpoints,
-		Timeout:    mtimeout,
-		Period:     minterval,
-		Enabled:    true,
-	}
-
-	config, err := common.NewConfigFrom(module)
-	if err != nil {
-		return holders
+	moduleConfig := map[string]interface{}{
+		"module":     mtype,
+		"metricsets": msets,
+		"hosts":      mendpoints,
+		"timeout":    mtimeout,
+		"period":     minterval,
+		"enabled":    true,
 	}
 
 	ns := p.getNamespace(pod)
 	if p.isNamespaceRequired(mtype) == true && ns == "" {
 		return holders
 	} else {
-		config.SetString(namespace, -1, ns)
+		moduleConfig["namespace"] = ns
 	}
 
 	if mverify == true {
-		ssl := map[string]string{
+		ssl := map[string]interface{}{
 			"verification_mode": "none",
 		}
-		sslconf, err := common.NewConfigFrom(ssl)
-		if err == nil {
-			config.SetChild("ssl", -1, sslconf)
-		}
+		moduleConfig["ssl"] = ssl
+	}
 
+	config, err := common.NewConfigFrom(moduleConfig)
+	if err != nil {
+		return holders
 	}
 
 	debug("Config for pod %s is %v", pod.Metadata.GetName(), *config)
