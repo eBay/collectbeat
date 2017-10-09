@@ -23,13 +23,13 @@ func TestLogAnnotationBuilder(t *testing.T) {
 	}{
 		{
 			annotations: map[string]interface{}{},
-			length:      1,
+			length:      2,
 		},
 		{
 			annotations: map[string]interface{}{
 				"foo/pattern": "bar",
 			},
-			length: 1,
+			length: 2,
 		},
 		{
 			annotations: map[string]interface{}{
