@@ -14,6 +14,8 @@ import (
 	"github.com/elastic/beats/libbeat/common"
 
 	"github.com/pkg/errors"
+
+	_ "github.com/elastic/beats/filebeat/processor/add_kubernetes_metadata"
 )
 
 // Collectbeat implements the Beater interface.
@@ -58,6 +60,22 @@ func New(b *beat.Beat, rawConfig *common.Config) (beat.Beater, error) {
 func (bt *Collectbeat) Run(b *beat.Beat) error {
 	var wg sync.WaitGroup
 
+	if bt.config.ConfigProspector == nil {
+		rawProspectorConfig := map[string]interface{}{
+			"enabled": true,
+			"path":    "./prospectors.d/*.yml",
+			"reload": map[string]interface{}{
+				"enabled": true,
+				"period":  "5s",
+			},
+		}
+
+		conf, err := common.NewConfigFrom(rawProspectorConfig)
+		if err != nil {
+			return fmt.Errorf("Unable to create prospectors config")
+		}
+		bt.config.ConfigProspector = conf
+	}
 	if len(bt.discoverers) != 0 {
 		factoryRawConf := map[string]interface{}{
 			"name":            "cfgfile",
@@ -74,9 +92,12 @@ func (bt *Collectbeat) Run(b *beat.Beat) error {
 			return err
 		}
 
+		builder := &discoverer.Builders{}
+		builder.SetFactory(runner.Factory)
+
 		for _, disc := range bt.discoverers {
 			d := disc
-			go d.Discoverer.Start(runner.Factory)
+			go d.Discoverer.Start(builder)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()

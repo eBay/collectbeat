@@ -10,7 +10,6 @@ import (
 
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/logp"
-	"github.com/elastic/beats/metricbeat/mb"
 )
 
 const (
@@ -56,25 +55,18 @@ func (i *SecurityAppender) Append(configHolder *dcommon.ConfigHolder) {
 	if config == nil {
 		return
 	}
-	moduleConfig := mb.ModuleConfig{}
-	config.Unpack(&moduleConfig)
 
-	if moduleConfig.Module == "prometheus" {
-		namespace, err := config.String("namespace", -1)
-		if err == nil {
-
+	if config["module"] == "prometheus" {
+		namespace, ok := config["namespace"]
+		if ok {
 			for _, ns := range i.Namespaces {
 				if ns == namespace {
 					token := i.getAuthHeaderFromToken()
 					if token != "" {
-						headers := map[string]interface{}{}
+						headers := common.MapStr{}
 						headers["Authorization"] = token
 
-						hconf, err := common.NewConfigFrom(headers)
-						if err == nil {
-							config.SetChild("headers", -1, hconf)
-						}
-
+						config["headers"] = headers
 					}
 					return
 				}

@@ -1,17 +1,3 @@
-// Copyright 2017 Docker, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     https://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package digest
 
 import (
@@ -123,14 +109,6 @@ func (a Algorithm) Hash() hash.Hash {
 	}
 
 	return algorithms[a].New()
-}
-
-// Encode encodes the raw bytes of a digest, typically from a hash.Hash, into
-// the encoded portion of the digest.
-func (a Algorithm) Encode(d []byte) string {
-	// TODO(stevvooe): Currently, all algorithms use a hex encoding. When we
-	// add support for back registration, we can modify this accordingly.
-	return fmt.Sprintf("%x", d)
 }
 
 // FromReader returns the digest of the reader using the algorithm.

@@ -11,13 +11,12 @@ import (
 
 	dcommon "github.com/ebay/collectbeat/discoverer/common"
 	"github.com/ebay/collectbeat/discoverer/common/factory"
+	"github.com/ghodss/yaml"
+	"github.com/mitchellh/hashstructure"
 
 	"github.com/elastic/beats/libbeat/cfgfile"
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/logp"
-
-	"github.com/ghodss/yaml"
-	"github.com/mitchellh/hashstructure"
 )
 
 var (
@@ -36,12 +35,12 @@ type cfgfileFactory struct {
 
 type cfgfileCache struct {
 	sync.Mutex
-	cfgfiles map[uint64]*common.Config
+	cfgfiles map[uint64][]common.MapStr
 }
 
 func NewCfgfileCache() cfgfileCache {
 	return cfgfileCache{
-		cfgfiles: make(map[uint64]*common.Config),
+		cfgfiles: make(map[uint64][]common.MapStr),
 	}
 }
 
@@ -94,17 +93,13 @@ func newCfgfileFactory(cfg *common.Config, _ factory.Meta) (factory.Factory, err
 	return cfgFactory, nil
 }
 
-func (r *cfgfileFactory) Start(configHolder *dcommon.ConfigHolder) error {
-	config := configHolder.Config
-	if config == nil {
-		return nil
-	}
+func (r *cfgfileFactory) Start(configHolder []*dcommon.ConfigHolder) error {
 	r.cfgfiles.Lock()
 	defer r.cfgfiles.Unlock()
-	rawCfg := []map[string]interface{}{}
-	err := config.Unpack(&rawCfg)
-	if err != nil {
-		return fmt.Errorf("Unable to unpack config due to error: %v", err)
+	rawCfg := []common.MapStr{}
+
+	for _, holder := range configHolder {
+		rawCfg = append(rawCfg, holder.Config)
 	}
 
 	debug("Current raw config coming in for creation: %v", rawCfg)
@@ -141,24 +136,19 @@ func (r *cfgfileFactory) Start(configHolder *dcommon.ConfigHolder) error {
 		return fmt.Errorf("Unable to write cfgfile due to error: %v", err)
 	}
 
-	r.cfgfiles.cfgfiles[hash] = config
+	r.cfgfiles.cfgfiles[hash] = rawCfg
 	logp.Info("Deployed config file %d", hash)
 
 	return nil
 }
 
-func (r *cfgfileFactory) Stop(configHolder *dcommon.ConfigHolder) error {
+func (r *cfgfileFactory) Stop(configHolder []*dcommon.ConfigHolder) error {
 	r.cfgfiles.Lock()
 	defer r.cfgfiles.Unlock()
-	config := configHolder.Config
-	if config == nil {
-		return nil
-	}
+	rawCfg := []common.MapStr{}
 
-	rawCfg := []map[string]interface{}{}
-	err := config.Unpack(&rawCfg)
-	if err != nil {
-		return fmt.Errorf("Unable to unpack config due to error: %v", err)
+	for _, holder := range configHolder {
+		rawCfg = append(rawCfg, holder.Config)
 	}
 
 	debug("Current raw config coming in for deletion: %v", rawCfg)
@@ -193,12 +183,12 @@ func (r *cfgfileFactory) Stop(configHolder *dcommon.ConfigHolder) error {
 }
 
 func (r *cfgfileFactory) Restart(old, new *dcommon.ConfigHolder) error {
-	err := r.Stop(old)
+	err := r.Stop([]*dcommon.ConfigHolder{old})
 	if err != nil {
 		return err
 	}
 
-	err = r.Start(new)
+	err = r.Start([]*dcommon.ConfigHolder{new})
 	return err
 }
 

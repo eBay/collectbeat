@@ -7,18 +7,16 @@ import (
 	"github.com/ebay/collectbeat/discoverer/common/builder"
 
 	"github.com/elastic/beats/libbeat/common"
+	kubernetes "github.com/elastic/beats/libbeat/processors/add_kubernetes_metadata"
 	"github.com/elastic/beats/metricbeat/module/graphite/server"
 
-	"fmt"
-
-	corev1 "github.com/ericchiang/k8s/api/v1"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestGraphiteAnnotations(t *testing.T) {
 	config, err := getBaseConfig(t)
 
-	bRaw, err := NewGraphiteAnnotationBuilder(config, nil)
+	bRaw, err := NewGraphiteAnnotationBuilder(config, nil, nil)
 	assert.NotNil(t, bRaw)
 	assert.Nil(t, err)
 
@@ -32,7 +30,7 @@ func TestGraphiteAnnotations(t *testing.T) {
 	assert.NotNil(t, confs)
 
 	gConf := server.GraphiteServerConfig{}
-	err = confs.Config.Unpack(&gConf)
+	err = confs.GetConfigFromHolder().Unpack(&gConf)
 
 	assert.Nil(t, err)
 	assert.Equal(t, gConf.Protocol, "tcp")
@@ -41,11 +39,10 @@ func TestGraphiteAnnotations(t *testing.T) {
 
 func TestAddModule(t *testing.T) {
 	config, _ := getBaseConfig(t)
-	bRaw, err := NewGraphiteAnnotationBuilder(config, nil)
+	bRaw, err := NewGraphiteAnnotationBuilder(config, nil, nil)
 	assert.NotNil(t, bRaw)
 	assert.Nil(t, err)
 
-	fmt.Println(bRaw)
 	b, ok := bRaw.(builder.PushBuilder)
 	assert.Equal(t, ok, true)
 
@@ -91,7 +88,7 @@ func TestAddModule(t *testing.T) {
 				"podIP": "4.5.6.7",
 			},
 		}
-		pod := &corev1.Pod{}
+		pod := &kubernetes.Pod{}
 
 		data, _ := json.Marshal(iface)
 		json.Unmarshal(data, pod)
@@ -99,7 +96,7 @@ func TestAddModule(t *testing.T) {
 		confs := b.AddModuleConfig(pod)
 
 		gConf := server.GraphiteServerConfig{}
-		err := confs.Config.Unpack(&gConf)
+		err := confs.GetConfigFromHolder().Unpack(&gConf)
 		assert.Nil(t, err)
 		assert.Equal(t, len(gConf.Templates), test.length)
 	}
@@ -107,7 +104,7 @@ func TestAddModule(t *testing.T) {
 
 func TestRemoveModule(t *testing.T) {
 	config, _ := getBaseConfig(t)
-	bRaw, err := NewGraphiteAnnotationBuilder(config, nil)
+	bRaw, err := NewGraphiteAnnotationBuilder(config, nil, nil)
 	assert.NotNil(t, bRaw)
 	assert.Nil(t, err)
 
@@ -128,14 +125,14 @@ func TestRemoveModule(t *testing.T) {
 			"podIP": "4.5.6.7",
 		},
 	}
-	pod := &corev1.Pod{}
+	pod := &kubernetes.Pod{}
 	data, _ := json.Marshal(iface)
 	json.Unmarshal(data, pod)
 
 	confs := b.AddModuleConfig(pod)
 
 	gConf := server.GraphiteServerConfig{}
-	err = confs.Config.Unpack(&gConf)
+	err = confs.GetConfigFromHolder().Unpack(&gConf)
 	assert.Nil(t, err)
 	assert.Equal(t, len(gConf.Templates), 1)
 
@@ -181,7 +178,7 @@ func TestRemoveModule(t *testing.T) {
 				"podIP": "4.5.6.7",
 			},
 		}
-		pod := &corev1.Pod{}
+		pod := &kubernetes.Pod{}
 
 		data, _ := json.Marshal(iface)
 		json.Unmarshal(data, pod)
@@ -189,7 +186,7 @@ func TestRemoveModule(t *testing.T) {
 		confs := b.RemoveModuleConfig(pod)
 
 		gConf := server.GraphiteServerConfig{}
-		err := confs.Config.Unpack(&gConf)
+		err := confs.GetConfigFromHolder().Unpack(&gConf)
 		assert.Nil(t, err)
 		assert.Equal(t, len(gConf.Templates), test.length)
 	}

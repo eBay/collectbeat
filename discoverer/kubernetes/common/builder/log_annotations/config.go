@@ -3,11 +3,11 @@ package log_annotations
 import "github.com/elastic/beats/libbeat/common"
 
 type LogPathConfig struct {
-	Prefix               string         `config:"prefix"`
-	BaseProspectorConfig *common.Config `config:"base_prospector_config"`
-	LogsPath             string         `config:"logs_path"`
-	DefaultNamespace     string         `config:"default_namespace"`
-	CustomPath           CustomPath     `config:"custom_path"`
+	Prefix               string        `config:"prefix"`
+	BaseProspectorConfig common.MapStr `config:"base_prospector_config"`
+	LogsPath             string        `config:"logs_path"`
+	DefaultNamespace     string        `config:"default_namespace"`
+	CustomPath           CustomPath    `config:"custom_path"`
 }
 
 type CustomPath struct {

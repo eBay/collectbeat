@@ -1,15 +1,14 @@
 package auth
 
 import (
-	"testing"
-
-	"github.com/elastic/beats/libbeat/common"
-
 	"io/ioutil"
 	"os"
+	"testing"
 
 	dcommon "github.com/ebay/collectbeat/discoverer/common"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/elastic/beats/libbeat/common"
 )
 
 func TestAuth(t *testing.T) {

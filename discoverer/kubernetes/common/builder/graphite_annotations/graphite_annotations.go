@@ -7,13 +7,13 @@ import (
 
 	dcommon "github.com/ebay/collectbeat/discoverer/common"
 	"github.com/ebay/collectbeat/discoverer/common/builder"
+	"github.com/ebay/collectbeat/discoverer/common/metagen"
 	"github.com/ebay/collectbeat/discoverer/common/registry"
 	kubecommon "github.com/ebay/collectbeat/discoverer/kubernetes/common"
 
-	corev1 "github.com/ericchiang/k8s/api/v1"
-
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/logp"
+	kubernetes "github.com/elastic/beats/libbeat/processors/add_kubernetes_metadata"
 	"github.com/elastic/beats/metricbeat/module/graphite/server"
 )
 
@@ -63,7 +63,7 @@ func newPodMap() podMap {
 	}
 }
 
-func NewGraphiteAnnotationBuilder(cfg *common.Config, _ builder.ClientInfo) (builder.Builder, error) {
+func NewGraphiteAnnotationBuilder(cfg *common.Config, _ builder.ClientInfo, _ metagen.MetaGen) (builder.Builder, error) {
 	config := struct {
 		Prefix string         `config:"prefix"`
 		Config *common.Config `config:"config"`
@@ -118,7 +118,7 @@ func (p *GraphiteAnnotationBuilder) Name() string {
 
 func (g *GraphiteAnnotationBuilder) AddModuleConfig(obj interface{}) *dcommon.ConfigHolder {
 	holder := g.ModuleConfig()
-	pod, ok := obj.(*corev1.Pod)
+	pod, ok := obj.(*kubernetes.Pod)
 	if !ok {
 		logp.Err("Unable to cast %v to type *v1.Pod", obj)
 		return holder
@@ -131,14 +131,14 @@ func (g *GraphiteAnnotationBuilder) AddModuleConfig(obj interface{}) *dcommon.Co
 	}
 
 	config := server.GraphiteServerConfig{}
-	holder.Config.Unpack(&config)
+	holder.GetConfigFromHolder().Unpack(&config)
 
 	if _, ok := g.BaseTemplates[templ.Filter]; ok {
 		logp.Err("Can not register filter that is present in base config %s", templ.Filter)
 		return holder
 	}
 
-	podMetaNS := fmt.Sprintf("%s/%s", pod.GetMetadata().GetNamespace(), pod.GetMetadata().GetName())
+	podMetaNS := fmt.Sprintf("%s/%s", pod.Metadata.Namespace, pod.Metadata.Name)
 	if pods, ok := g.podMap.pods[templ.Filter]; ok {
 		if tempConf, ok := g.podMap.templates[templ.Filter]; ok {
 			if tempConf.Template != templ.Template {
@@ -164,7 +164,7 @@ func (g *GraphiteAnnotationBuilder) AddModuleConfig(obj interface{}) *dcommon.Co
 	}
 
 	newHolder := g.ModuleConfig()
-	err := newHolder.Config.Merge(baseConfig)
+	err := newHolder.GetConfigFromHolder().Merge(baseConfig)
 	if err != nil {
 		logp.Err("Error merging base config: %v", err)
 		return nil
@@ -177,7 +177,7 @@ func (g *GraphiteAnnotationBuilder) RemoveModuleConfig(obj interface{}) *dcommon
 
 	holder := g.ModuleConfig()
 
-	pod, ok := obj.(*corev1.Pod)
+	pod, ok := obj.(*kubernetes.Pod)
 	if !ok {
 		logp.Err("Unable to cast %v to type *v1.Pod", obj)
 		return holder
@@ -189,9 +189,9 @@ func (g *GraphiteAnnotationBuilder) RemoveModuleConfig(obj interface{}) *dcommon
 	}
 
 	config := server.GraphiteServerConfig{}
-	holder.Config.Unpack(&config)
+	holder.GetConfigFromHolder().Unpack(&config)
 
-	podMetaNS := fmt.Sprintf("%s/%s", pod.GetMetadata().GetNamespace(), pod.GetMetadata().GetName())
+	podMetaNS := fmt.Sprintf("%s/%s", pod.Metadata.Namespace, pod.Metadata.Name)
 	if pods, ok := g.podMap.pods[templ.Filter]; ok {
 		if tempConf, ok := g.podMap.templates[templ.Filter]; ok {
 			if tempConf.Template != templ.Template {
@@ -228,12 +228,14 @@ func (g *GraphiteAnnotationBuilder) RemoveModuleConfig(obj interface{}) *dcommon
 	}
 
 	newHolder := g.ModuleConfig()
-	err := newHolder.Config.Merge(baseConfig)
+	cfg := newHolder.GetConfigFromHolder()
+	err := cfg.Merge(baseConfig)
 	if err != nil {
 		logp.Err("Error merging base config: %v", err)
 		return nil
 	}
 
+	newHolder.Config = dcommon.GetMapFromConfig(cfg)
 	return newHolder
 }
 
@@ -263,12 +265,12 @@ func (g *GraphiteAnnotationBuilder) ModuleConfig() *dcommon.ConfigHolder {
 	}
 
 	return &dcommon.ConfigHolder{
-		Config: cfg,
+		Config: dcommon.GetMapFromConfig(cfg),
 	}
 }
 
-func (g *GraphiteAnnotationBuilder) getTemplateFromPod(pod *corev1.Pod) *server.TemplateConfig {
-	debug("Entering pod %s for graphite builder", pod.Metadata.GetName())
+func (g *GraphiteAnnotationBuilder) getTemplateFromPod(pod *kubernetes.Pod) *server.TemplateConfig {
+	debug("Entering pod %s for graphite builder", pod.Metadata.Name)
 
 	// Process only if a pod got an IP
 	ip := kubecommon.GetPodIp(pod)
@@ -307,19 +309,19 @@ func (g *GraphiteAnnotationBuilder) getTemplateFromPod(pod *corev1.Pod) *server.
 
 }
 
-func (p *GraphiteAnnotationBuilder) getNamespace(pod *corev1.Pod) string {
+func (p *GraphiteAnnotationBuilder) getNamespace(pod *kubernetes.Pod) string {
 	return kubecommon.GetAnnotationWithPrefix(namespace, p.Prefix, pod)
 }
 
-func (p *GraphiteAnnotationBuilder) getFilter(pod *corev1.Pod) string {
+func (p *GraphiteAnnotationBuilder) getFilter(pod *kubernetes.Pod) string {
 	return kubecommon.GetAnnotationWithPrefix(filter, p.Prefix, pod)
 }
 
-func (p *GraphiteAnnotationBuilder) getTemplate(pod *corev1.Pod) string {
+func (p *GraphiteAnnotationBuilder) getTemplate(pod *kubernetes.Pod) string {
 	return kubecommon.GetAnnotationWithPrefix(template, p.Prefix, pod)
 }
 
-func (p *GraphiteAnnotationBuilder) getDelimiter(pod *corev1.Pod) string {
+func (p *GraphiteAnnotationBuilder) getDelimiter(pod *kubernetes.Pod) string {
 	d := kubecommon.GetAnnotationWithPrefix(delimiter, p.Prefix, pod)
 	if d != "" {
 		return d
@@ -328,7 +330,7 @@ func (p *GraphiteAnnotationBuilder) getDelimiter(pod *corev1.Pod) string {
 	}
 }
 
-func (p *GraphiteAnnotationBuilder) getTags(pod *corev1.Pod) map[string]string {
+func (p *GraphiteAnnotationBuilder) getTags(pod *kubernetes.Pod) map[string]string {
 	tagsMap := make(map[string]string)
 	tagStr := kubecommon.GetAnnotationWithPrefix(tags, p.Prefix, pod)
 	if tagStr != "" {

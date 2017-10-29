@@ -4,14 +4,13 @@ import (
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/logp"
 
-	"github.com/ebay/collectbeat/discoverer/common/factory"
 	_ "github.com/ebay/collectbeat/discoverer/include"
 )
 
 var discovererPlugins = make(map[string]Constructor)
 
 type Discoverer interface {
-	Start(runner factory.Factory)
+	Start(builder *Builders)
 	Stop()
 	String() string
 }

@@ -4,18 +4,17 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	dcommon "github.com/ebay/collectbeat/discoverer/common"
 	"github.com/ebay/collectbeat/discoverer/common/builder"
+	"github.com/ebay/collectbeat/discoverer/common/metagen"
 	"github.com/ebay/collectbeat/discoverer/common/registry"
 	kubecommon "github.com/ebay/collectbeat/discoverer/kubernetes/common"
 
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/logp"
+	kubernetes "github.com/elastic/beats/libbeat/processors/add_kubernetes_metadata"
 	"github.com/elastic/beats/metricbeat/mb"
-
-	corev1 "github.com/ericchiang/k8s/api/v1"
 )
 
 const (
@@ -29,8 +28,8 @@ const (
 	insecure_skip_verify = "insecure_skip_verify"
 
 	default_prefix   = "io.collectbeat.metrics/"
-	default_timeout  = time.Second * 3
-	default_interval = time.Minute
+	default_timeout  = "3s"
+	default_interval = "1m"
 
 	AnnotationsBuilder = "metrics_annotations"
 )
@@ -46,9 +45,10 @@ func init() {
 // PodAnnotationBuilder implements default modules based on pod annotations
 type PodAnnotationBuilder struct {
 	Prefix string
+	meta   metagen.MetaGen
 }
 
-func NewPodAnnotationBuilder(cfg *common.Config, _ builder.ClientInfo) (builder.Builder, error) {
+func NewPodAnnotationBuilder(cfg *common.Config, _ builder.ClientInfo, meta metagen.MetaGen) (builder.Builder, error) {
 	config := struct {
 		Prefix string `config:"prefix"`
 	}{
@@ -65,7 +65,7 @@ func NewPodAnnotationBuilder(cfg *common.Config, _ builder.ClientInfo) (builder.
 		config.Prefix = config.Prefix + "/"
 	}
 
-	return &PodAnnotationBuilder{Prefix: config.Prefix}, nil
+	return &PodAnnotationBuilder{Prefix: config.Prefix, meta: meta}, nil
 }
 
 func (p *PodAnnotationBuilder) Name() string {
@@ -75,13 +75,13 @@ func (p *PodAnnotationBuilder) Name() string {
 func (p *PodAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon.ConfigHolder {
 	holders := []*dcommon.ConfigHolder{}
 
-	pod, ok := obj.(*corev1.Pod)
+	pod, ok := obj.(*kubernetes.Pod)
 	if !ok {
 		logp.Err("Unable to cast %v to type *v1.Pod", obj)
 		return holders
 	}
 
-	debug("Entering pod %s for annotations builder", pod.Metadata.GetName())
+	debug("Entering pod %s for annotations builder", pod.Metadata.Name)
 	ip := kubecommon.GetPodIp(pod)
 	if ip == "" {
 		return holders
@@ -106,7 +106,7 @@ func (p *PodAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon.Co
 	mtimeout := p.getTimeout(pod)
 	mverify := p.getInsecureSkipVerify(pod)
 
-	moduleConfig := map[string]interface{}{
+	moduleConfig := common.MapStr{
 		"module":     mtype,
 		"metricsets": msets,
 		"hosts":      mendpoints,
@@ -129,25 +129,28 @@ func (p *PodAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon.Co
 		moduleConfig["ssl"] = ssl
 	}
 
-	config, err := common.NewConfigFrom(moduleConfig)
-	if err != nil {
-		return holders
+	//TODO: create individual metricbeat metricsets for each endpoint
+	if p.meta != nil {
+		kubemeta := p.meta.GetMetaData(mendpoints[0])
+		if kubemeta != nil {
+			kubecommon.SetKubeMetadata(kubemeta, moduleConfig)
+		}
 	}
 
-	debug("Config for pod %s is %v", pod.Metadata.GetName(), *config)
+	debug("Config for pod %s is %v", pod.Metadata.Name, moduleConfig)
 
 	holder := &dcommon.ConfigHolder{
-		Config: config,
+		Config: moduleConfig,
 	}
 	holders = append(holders, holder)
 	return holders
 }
 
-func (p *PodAnnotationBuilder) getMetricType(pod *corev1.Pod) string {
+func (p *PodAnnotationBuilder) getMetricType(pod *kubernetes.Pod) string {
 	return kubecommon.GetAnnotationWithPrefix(metrictype, p.Prefix, pod)
 }
 
-func (p *PodAnnotationBuilder) getNamespace(pod *corev1.Pod) string {
+func (p *PodAnnotationBuilder) getNamespace(pod *kubernetes.Pod) string {
 	return kubecommon.GetAnnotationWithPrefix(namespace, p.Prefix, pod)
 }
 
@@ -158,7 +161,7 @@ func (p *PodAnnotationBuilder) isNamespaceRequired(module string) bool {
 	return false
 }
 
-func (p *PodAnnotationBuilder) getEndpoints(ip string, pod *corev1.Pod) []string {
+func (p *PodAnnotationBuilder) getEndpoints(ip string, pod *kubernetes.Pod) []string {
 	endpointStr := kubecommon.GetAnnotationWithPrefix(endpoints, p.Prefix, pod)
 	eps := strings.Split(endpointStr, ",")
 
@@ -178,7 +181,7 @@ func (p *PodAnnotationBuilder) getEndpoints(ip string, pod *corev1.Pod) []string
 	return output
 }
 
-func (p *PodAnnotationBuilder) getMetricSets(key string, pod *corev1.Pod) []string {
+func (p *PodAnnotationBuilder) getMetricSets(key string, pod *kubernetes.Pod) []string {
 	msetStr := kubecommon.GetAnnotationWithPrefix(metricsets, p.Prefix, pod)
 	msets := strings.Split(msetStr, ",")
 
@@ -198,40 +201,29 @@ func (p *PodAnnotationBuilder) getMetricSets(key string, pod *corev1.Pod) []stri
 	}
 }
 
-func (p *PodAnnotationBuilder) getInterval(pod *corev1.Pod) time.Duration {
-	i := kubecommon.GetAnnotationWithPrefix(interval, p.Prefix, pod)
-
-	var dur time.Duration
-	if i != "" {
-		dur, err := time.ParseDuration(i)
-		if err == nil {
-			return dur
-		}
+func (p *PodAnnotationBuilder) getInterval(pod *kubernetes.Pod) string {
+	t := kubecommon.GetAnnotationWithPrefix(interval, p.Prefix, pod)
+	if t == "" {
+		return default_interval
 	}
 
-	dur = default_interval
-	return dur
+	return t
 }
 
-func (p *PodAnnotationBuilder) getTimeout(pod *corev1.Pod) time.Duration {
+func (p *PodAnnotationBuilder) getTimeout(pod *kubernetes.Pod) string {
 	t := kubecommon.GetAnnotationWithPrefix(timeout, p.Prefix, pod)
-	var dur time.Duration
-	if t != "" {
-		dur, err := time.ParseDuration(t)
-		if err == nil {
-			return dur
-		}
+	if t == "" {
+		return default_timeout
 	}
 
-	dur = default_timeout
-	return dur
+	return t
 }
 
-func (p *PodAnnotationBuilder) getScheme(pod *corev1.Pod) string {
+func (p *PodAnnotationBuilder) getScheme(pod *kubernetes.Pod) string {
 	return kubecommon.GetAnnotationWithPrefix(scheme, p.Prefix, pod)
 }
 
-func (p *PodAnnotationBuilder) getInsecureSkipVerify(pod *corev1.Pod) bool {
+func (p *PodAnnotationBuilder) getInsecureSkipVerify(pod *kubernetes.Pod) bool {
 	verifyStr := kubecommon.GetAnnotationWithPrefix(insecure_skip_verify, p.Prefix, pod)
 
 	verify, _ := strconv.ParseBool(verifyStr)

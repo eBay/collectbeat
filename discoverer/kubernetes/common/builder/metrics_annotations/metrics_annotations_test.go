@@ -5,11 +5,10 @@ import (
 	"testing"
 
 	"github.com/ebay/collectbeat/discoverer/common/builder"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/elastic/beats/libbeat/common"
-
-	corev1 "github.com/ericchiang/k8s/api/v1"
-	"github.com/stretchr/testify/assert"
+	kubernetes "github.com/elastic/beats/libbeat/processors/add_kubernetes_metadata"
 )
 
 func TestMetricsAnnotations(t *testing.T) {
@@ -20,11 +19,11 @@ func TestMetricsAnnotations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bRaw, err := NewPodAnnotationBuilder(config, nil)
+	bRaw, err := NewPodAnnotationBuilder(config, nil, nil)
 	assert.NotNil(t, bRaw)
 	assert.Nil(t, err)
 
-	pod := &corev1.Pod{}
+	pod := &kubernetes.Pod{}
 
 	annotations := map[string]interface{}{}
 	iface := map[string]interface{}{
@@ -96,7 +95,7 @@ func TestMetricsAnnotations(t *testing.T) {
 				"podIP": "4.5.6.7",
 			},
 		}
-		pod := &corev1.Pod{}
+		pod := &kubernetes.Pod{}
 
 		data, _ = json.Marshal(iface)
 		json.Unmarshal(data, pod)

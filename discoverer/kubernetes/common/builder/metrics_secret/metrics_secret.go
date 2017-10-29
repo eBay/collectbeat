@@ -15,8 +15,10 @@ import (
 	"github.com/elastic/beats/libbeat/logp"
 	"github.com/elastic/beats/metricbeat/mb"
 
+	"github.com/ebay/collectbeat/discoverer/common/metagen"
 	"github.com/ericchiang/k8s"
-	corev1 "github.com/ericchiang/k8s/api/v1"
+
+	kubernetes "github.com/elastic/beats/libbeat/processors/add_kubernetes_metadata"
 )
 
 const (
@@ -39,9 +41,10 @@ type SecretBuilder struct {
 	Prefix string
 	client *k8s.Client
 	ctx    context.Context
+	meta   metagen.MetaGen
 }
 
-func NewSecretBuilder(cfg *common.Config, clientInfo builder.ClientInfo) (builder.Builder, error) {
+func NewSecretBuilder(cfg *common.Config, clientInfo builder.ClientInfo, meta metagen.MetaGen) (builder.Builder, error) {
 	config := struct {
 		Prefix string `config:"prefix"`
 	}{
@@ -70,7 +73,7 @@ func NewSecretBuilder(cfg *common.Config, clientInfo builder.ClientInfo) (builde
 		return nil, fmt.Errorf("unable to get kube-client from ClientInfo")
 	}
 
-	return &SecretBuilder{Prefix: config.Prefix, client: client, ctx: ctx}, nil
+	return &SecretBuilder{Prefix: config.Prefix, client: client, ctx: ctx, meta: meta}, nil
 }
 
 func (s *SecretBuilder) Name() string {
@@ -80,13 +83,13 @@ func (s *SecretBuilder) Name() string {
 func (s *SecretBuilder) BuildModuleConfigs(obj interface{}) []*dcommon.ConfigHolder {
 	holders := []*dcommon.ConfigHolder{}
 
-	pod, ok := obj.(*corev1.Pod)
+	pod, ok := obj.(*kubernetes.Pod)
 	if !ok {
 		logp.Err("Unable to cast %v to type *v1.Pod", obj)
 		return holders
 	}
 
-	ip := pod.Status.GetPodIP()
+	ip := kubecommon.GetPodIp(pod)
 	if ip == "" {
 		return holders
 	}
@@ -96,10 +99,10 @@ func (s *SecretBuilder) BuildModuleConfigs(obj interface{}) []*dcommon.ConfigHol
 		return holders
 	}
 
-	secret, err := s.client.CoreV1().GetSecret(s.ctx, secretName, pod.GetMetadata().GetNamespace())
+	secret, err := s.client.CoreV1().GetSecret(s.ctx, secretName, pod.Metadata.Namespace)
 	if err != nil {
 		logp.Err("Unable to get secret %s from namespace %s due to error %v", secretName,
-			pod.GetMetadata().GetNamespace(), err)
+			pod.Metadata.Namespace, err)
 		return holders
 	}
 
@@ -126,6 +129,20 @@ func (s *SecretBuilder) BuildModuleConfigs(obj interface{}) []*dcommon.ConfigHol
 		s.applyTimeout(mCfg)
 
 		module.Merge(*mCfg)
+
+		rawModule := map[string]interface{}{}
+		err := module.Unpack(rawModule)
+		if err != nil {
+			logp.Err("Unable to parse config object due to error: ", err)
+			continue
+		}
+
+		if s.meta != nil && len(mCfg.Hosts) != 0 {
+			meta := s.meta.GetMetaData(mCfg.Hosts[0])
+			kubecommon.SetKubeMetadata(meta, rawModule)
+		}
+
+		module := common.MapStr(rawModule)
 		holder := &dcommon.ConfigHolder{
 			Config: module,
 		}

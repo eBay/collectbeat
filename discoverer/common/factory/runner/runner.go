@@ -49,32 +49,36 @@ func newRunnerFactory(_ *common.Config, meta factory.Meta) (factory.Factory, err
 	}
 }
 
-func (r *runnerFactory) Start(configHolder *dcommon.ConfigHolder) error {
-	config := configHolder.Config
-	id := configHash(config)
-	runner, err := r.buildModuleRunner(config)
+func (r *runnerFactory) Start(holders []*dcommon.ConfigHolder) error {
+	for _, holder := range holders {
+		config := holder.Config
+		id := configHash(config)
+		runner, err := r.buildModuleRunner(config)
 
-	if err != nil {
-		return err
+		if err != nil {
+			return err
+		}
+		r.runners.Lock()
+		runner.Start()
+		logp.Info("Starting runner %d", id)
+		r.runners.runners[id] = runner
+		r.runners.Unlock()
 	}
-	r.runners.Lock()
-	runner.Start()
-	logp.Info("Starting runner %d", id)
-	r.runners.runners[id] = runner
-	r.runners.Unlock()
 
 	return nil
 }
 
-func (r *runnerFactory) Stop(configHolder *dcommon.ConfigHolder) error {
-	config := configHolder.Config
-	id := configHash(config)
+func (r *runnerFactory) Stop(holders []*dcommon.ConfigHolder) error {
+	for _, holder := range holders {
+		config := holder.Config
+		id := configHash(config)
 
-	r.runners.Lock()
-	if run, ok := r.runners.runners[id]; ok {
-		run.Stop()
-		logp.Info("Stopping runner %d", id)
-		delete(r.runners.runners, id)
+		r.runners.Lock()
+		if run, ok := r.runners.runners[id]; ok {
+			run.Stop()
+			logp.Info("Stopping runner %d", id)
+			delete(r.runners.runners, id)
+		}
 	}
 
 	return nil
@@ -119,24 +123,21 @@ func (r *runnerFactory) Restart(oldHolder, newHolder *dcommon.ConfigHolder) erro
 	return nil
 }
 
-func (r *runnerFactory) buildModuleRunner(config *common.Config) (cfgfile.Runner, error) {
+func (r *runnerFactory) buildModuleRunner(config common.MapStr) (cfgfile.Runner, error) {
+	cfg := factory.GetConfigFromMapStr(config)
+	if cfg == nil {
+		return nil, fmt.Errorf("Unable to create module runner")
+	}
 	// Create a runner object
-	runner, err := r.factory.Create(config)
+	runner, err := r.factory.Create(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to create module runner due to error %v", err)
 	}
 	return runner, nil
 }
 
-func configHash(config *common.Config) uint64 {
-	rawConfig := map[string]interface{}{}
-	err := config.Unpack(rawConfig)
-	if err != nil {
-		debug("Error unpacking configuration due to error: %v", err)
-		return 0
-	}
-
-	hash, err := hashstructure.Hash(rawConfig, nil)
+func configHash(config common.MapStr) uint64 {
+	hash, err := hashstructure.Hash(config, nil)
 	if err != nil {
 		debug("Error generating hash due to error: %v", err)
 		return 0
