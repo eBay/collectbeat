@@ -14,11 +14,19 @@ jobs:
   include:
     # General checks
     - os: linux
-      env: TARGETS="check"
+      env: TARGETS="check" 
       go: $GO_VERSION
       stage: check
 
     # Collectbeat
+    - os: linux
+      env: TARGETS="test"
+      go: $GO_VERSION
+      stage: test
+    - os: osx
+      env: TARGETS="test"
+      go: $GO_VERSION
+      stage: test
     - os: linux
       go: $GO_VERSION
       stage: test
@@ -27,7 +35,7 @@ jobs:
       stage: test
 
 script:
-  - make
+  - make $TARGETS
 
 addons:
   apt:
