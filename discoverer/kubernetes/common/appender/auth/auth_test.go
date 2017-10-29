@@ -24,11 +24,11 @@ func TestAuth(t *testing.T) {
 	assert.NotNil(t, sec)
 	assert.Nil(t, err)
 
-	c, err := common.NewConfigFrom(map[string]interface{}{
+	c := common.MapStr{
 		"module":     "prometheus",
 		"metricsets": []string{"test"},
 		"namespace":  "bar",
-	})
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,19 +36,18 @@ func TestAuth(t *testing.T) {
 	h := &dcommon.ConfigHolder{Config: c}
 
 	sec.Append(h)
-	ok := h.Config.HasField("headers")
+	_, ok := h.Config["headers"]
 	assert.Equal(t, ok, false)
 
 	writeFile("test", "foo bar")
 	sec.Append(h)
-	ok = h.Config.HasField("headers")
+	_, ok = h.Config["headers"]
 	assert.Equal(t, ok, true)
 
-	new, err := h.Config.Child("headers", -1)
-	assert.Nil(t, err)
+	new, ok := h.Config["headers"]
+	assert.Equal(t, ok, true)
 
-	obj := map[string]interface{}{}
-	new.Unpack(obj)
+	obj := new.(common.MapStr)
 
 	header, ok := obj["Authorization"]
 	assert.Equal(t, ok, true)

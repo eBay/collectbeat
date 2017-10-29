@@ -2,7 +2,6 @@ package log_annotations
 
 import (
 	"encoding/json"
-	"reflect"
 	"testing"
 
 	"github.com/ebay/collectbeat/discoverer/common/builder"
@@ -134,11 +133,11 @@ func TestProspectorConfig(t *testing.T) {
 	multilineCfg := common.MapStr{}
 	setMultilineConfig(multilineCfg, "abc", false, "after")
 
-	assert.Equal(t, confs[0].Config["paths"], []interface{}{reflect.ValueOf("/var/123/*.log").Interface()})
+	assert.Equal(t, confs[0].Config["paths"], []string{"/var/123/*.log"})
 	assert.Equal(t, confs[0].Config["multiline"], multilineCfg["multiline"])
 
 	setMultilineConfig(multilineCfg, "cde", false, "after")
-	assert.Equal(t, confs[1].Config["paths"], []interface{}{reflect.ValueOf("/var/456/*.log").Interface()})
+	assert.Equal(t, confs[1].Config["paths"], []string{"/var/456/*.log"})
 	assert.Equal(t, confs[1].Config["multiline"], multilineCfg["multiline"])
 
 }

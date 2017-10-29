@@ -86,7 +86,7 @@ func (l *PodLogAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon
 	for _, container := range pod.Status.ContainerStatuses {
 		name := container.Name
 		meta := dcommon.Meta{}
-		containerConfig := l.baseConfig
+		containerConfig := l.baseConfig.Clone()
 
 		cid := container.ContainerID
 		var cmeta common.MapStr
