@@ -9,8 +9,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/elastic/beats/libbeat/common"
 	"github.com/ebay/collectbeat/discoverer/common/metagen"
+
+	"github.com/elastic/beats/libbeat/common"
 )
 
 func TestRegistry(t *testing.T) {
