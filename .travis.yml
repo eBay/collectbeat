@@ -1,0 +1,41 @@
+dist: trusty
+language: go
+
+# Make sure project can also be built on travis for clones of the repo
+go_import_path: github.com/ebay/collectbeat
+
+env:
+  global:
+    # Cross-compile for amd64 only to speed up testing.
+    - GOX_FLAGS="-arch amd64"
+    - GO_VERSION="$(cat .go-version)"
+
+jobs:
+  include:
+    # General checks
+    - os: linux
+      env: TARGETS="check"
+      go: $GO_VERSION
+      stage: check
+
+    # Collectbeat
+    - os: linux
+      go: $GO_VERSION
+      stage: test
+    - os: osx
+      go: $GO_VERSION
+      stage: test
+
+script:
+  - make
+
+addons:
+  apt:
+    packages:
+      - python-virtualenv
+      - libpcap-dev
+
+before_install:
+  - python --version
+  - umask 022
+  - chmod -R go-w $GOPATH/src/github.com/ebay/collectbeat

@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	dcommon "github.com/ebay/collectbeat/discoverer/common"
-
 	"github.com/stretchr/testify/assert"
 
 	"github.com/elastic/beats/libbeat/common"
@@ -37,11 +36,11 @@ func TestFactory(t *testing.T) {
 
 type fakeFactory struct{}
 
-func (f *fakeFactory) Start(config *dcommon.ConfigHolder) error {
+func (f *fakeFactory) Start(config []*dcommon.ConfigHolder) error {
 	return nil
 }
 
-func (f *fakeFactory) Stop(config *dcommon.ConfigHolder) error {
+func (f *fakeFactory) Stop(config []*dcommon.ConfigHolder) error {
 	return nil
 }
 

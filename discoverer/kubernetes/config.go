@@ -5,18 +5,24 @@ import (
 	"time"
 
 	"github.com/elastic/beats/libbeat/common"
+	kubernetes "github.com/elastic/beats/libbeat/processors/add_kubernetes_metadata"
 )
 
 type kubeDiscovererConfig struct {
-	InCluster        bool          `config:"in_cluster"`
-	KubeConfig       string        `config:"kube_config"`
-	Host             string        `config:"host"`
-	Namespace        string        `config:"namespace"`
-	SyncPeriod       time.Duration `config:"sync_period"`
-	Builders         PluginConfig  `config:"builders"`
-	DefaultBuilders  Enabled       `config:"default_builders"`
-	Appenders        PluginConfig  `config:"appenders"`
-	DefaultAppenders Enabled       `config:"default_appenders"`
+	InCluster          bool                    `config:"in_cluster"`
+	KubeConfig         string                  `config:"kube_config"`
+	Host               string                  `config:"host"`
+	Namespace          string                  `config:"namespace"`
+	SyncPeriod         time.Duration           `config:"sync_period"`
+	Builders           PluginConfig            `config:"builders"`
+	DefaultBuilders    Enabled                 `config:"default_builders"`
+	Appenders          PluginConfig            `config:"appenders"`
+	DefaultAppenders   Enabled                 `config:"default_appenders"`
+	Indexers           kubernetes.PluginConfig `config:"indexers"`
+	DefaultIndexers    Enabled                 `config:"default_indexers"`
+	IncludeLabels      []string                `config:"include_labels"`
+	ExcludeLabels      []string                `config:"exclude_labels"`
+	IncludeAnnotations []string                `config:"include_annotations"`
 }
 
 type Enabled struct {
@@ -32,6 +38,7 @@ func defaultKuberentesDiscovererConfig() kubeDiscovererConfig {
 		Namespace:        "kube-system",
 		DefaultBuilders:  Enabled{true},
 		DefaultAppenders: Enabled{true},
+		DefaultIndexers:  Enabled{true},
 	}
 }
 

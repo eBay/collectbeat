@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/ebay/collectbeat/discoverer/common/metagen"
+
 	"github.com/elastic/beats/libbeat/common"
 )
 
@@ -38,7 +40,7 @@ func TestRegistry(t *testing.T) {
 	assert.True(t, ok)
 	assert.NotNil(t, fConf)
 
-	f, err := foo(&fConf, nil)
+	f, err := foo(&fConf, nil, nil)
 	assert.NotNil(t, f)
 	assert.Nil(t, err)
 
@@ -49,7 +51,7 @@ func TestRegistry(t *testing.T) {
 	assert.True(t, ok)
 	assert.NotNil(t, bConf)
 
-	b, err := foo(&bConf, nil)
+	b, err := foo(&bConf, nil, nil)
 	assert.NotNil(t, b)
 	assert.Nil(t, err)
 
@@ -67,7 +69,7 @@ func (f *fakeBuilder) Name() string {
 	return "fake_builder"
 }
 
-func newFakeBuilder(_ *common.Config, _ builder.ClientInfo) (builder.Builder, error) {
+func newFakeBuilder(_ *common.Config, _ builder.ClientInfo, _ metagen.MetaGen) (builder.Builder, error) {
 	return &fakeBuilder{}, nil
 }
 

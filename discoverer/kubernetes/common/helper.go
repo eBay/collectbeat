@@ -3,11 +3,12 @@ package common
 import (
 	"fmt"
 
-	corev1 "github.com/ericchiang/k8s/api/v1"
+	"github.com/elastic/beats/libbeat/common"
+	kubernetes "github.com/elastic/beats/libbeat/processors/add_kubernetes_metadata"
 )
 
-func GetAnnotation(key string, pod *corev1.Pod) string {
-	annotations := pod.GetMetadata().GetAnnotations()
+func GetAnnotation(key string, pod *kubernetes.Pod) string {
+	annotations := pod.Metadata.Annotations
 
 	if annotations == nil {
 		return ""
@@ -21,16 +22,29 @@ func GetAnnotation(key string, pod *corev1.Pod) string {
 	return ""
 }
 
-func GetAnnotationWithPrefix(key, prefix string, pod *corev1.Pod) string {
+func GetAnnotationWithPrefix(key, prefix string, pod *kubernetes.Pod) string {
 	return GetAnnotation(fmt.Sprintf("%s%s", prefix, key), pod)
 }
 
-func GetPodIp(pod *corev1.Pod) string {
-	ip := pod.Status.GetPodIP()
+func GetPodIp(pod *kubernetes.Pod) string {
+	ip := pod.Status.PodIP
 	return ip
 }
 
-func GetPodPhase(pod *corev1.Pod) string {
-	phase := pod.Status.GetPhase()
+func GetPodPhase(pod *kubernetes.Pod) string {
+	phase := pod.Status.Phase
 	return phase
+}
+
+func SetKubeMetadata(kubemeta, config common.MapStr) {
+	if kubemeta != nil {
+		if _, ok := config["fields"]; !ok {
+			config["fields"] = common.MapStr{
+				"kubernetes": kubemeta,
+			}
+		} else {
+			config["fields"].(common.MapStr)["kubernetes"] = kubemeta
+		}
+		config["fields_under_root"] = true
+	}
 }

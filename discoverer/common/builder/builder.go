@@ -2,6 +2,7 @@ package builder
 
 import (
 	dcommon "github.com/ebay/collectbeat/discoverer/common"
+	"github.com/ebay/collectbeat/discoverer/common/metagen"
 
 	"github.com/elastic/beats/libbeat/common"
 )
@@ -33,4 +34,4 @@ type PushBuilder interface {
 
 type ClientInfo common.MapStr
 
-type BuilderConstructor func(config *common.Config, client ClientInfo) (Builder, error)
+type BuilderConstructor func(config *common.Config, client ClientInfo, metagen metagen.MetaGen) (Builder, error)

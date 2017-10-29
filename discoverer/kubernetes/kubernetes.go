@@ -11,12 +11,12 @@ import (
 	"github.com/ebay/collectbeat/discoverer"
 	"github.com/ebay/collectbeat/discoverer/common/appender"
 	"github.com/ebay/collectbeat/discoverer/common/builder"
-	"github.com/ebay/collectbeat/discoverer/common/factory"
 	"github.com/ebay/collectbeat/discoverer/common/registry"
 	kubecommon "github.com/ebay/collectbeat/discoverer/kubernetes/common"
 
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/logp"
+	kubernetes "github.com/elastic/beats/libbeat/processors/add_kubernetes_metadata"
 
 	"github.com/ericchiang/k8s"
 	"github.com/ghodss/yaml"
@@ -33,6 +33,8 @@ var (
 
 type kubernetesDiscoverer struct {
 	podWatcher *PodWatcher
+	builders   []builder.Builder
+	appenders  []appender.Appender
 }
 
 func init() {
@@ -110,9 +112,22 @@ func newKubernetesDiscoverer(cfg *common.Config) (discoverer.Discoverer, error) 
 		}
 	}
 
+	genMeta := kubernetes.NewGenDefaultMeta(config.IncludeAnnotations, config.IncludeLabels, config.ExcludeLabels)
+
+	//Load default indexer configs
+	if config.DefaultIndexers.Enabled == true {
+		kubernetes.Indexing.RLock()
+		for key, cfg := range kubernetes.Indexing.GetDefaultIndexerConfigs() {
+			config.Indexers = append(config.Indexers, map[string]common.Config{key: cfg})
+		}
+		kubernetes.Indexing.RUnlock()
+	}
+
+	indexers := kubernetes.NewIndexers(config.Indexers, genMeta)
 	debug("kubernetes", "Using host ", config.Host)
 	debug("kubernetes", "Initializing watcher")
 	if client != nil {
+		watcher := NewPodWatcher(client, indexers, config.SyncPeriod, config.Host)
 
 		clientInfo := builder.ClientInfo{
 			kubecommon.ClientKey: client,
@@ -126,7 +141,7 @@ func newKubernetesDiscoverer(cfg *common.Config) (discoverer.Discoverer, error) 
 					continue
 				}
 
-				builder, err := indexFunc(pluginConfig, clientInfo)
+				builder, err := indexFunc(pluginConfig, clientInfo, watcher)
 				if err != nil {
 					logp.Warn("Unable to initialize indexing plugin %s due to error %v", name, err)
 					continue
@@ -162,21 +177,27 @@ func newKubernetesDiscoverer(cfg *common.Config) (discoverer.Discoverer, error) 
 			return nil, fmt.Errorf("Can not initialize kubernetes plugin with zero builder plugins")
 		}
 
-		builder := discoverer.NewBuilder(builders, appenders)
-		watcher := NewPodWatcher(client, builder, config.SyncPeriod, config.Host)
-		return kubernetesDiscoverer{podWatcher: watcher}, nil
+		return &kubernetesDiscoverer{podWatcher: watcher, builders: builders, appenders: appenders}, nil
 	}
 
 	return nil, fatalError
 }
 
-func (k kubernetesDiscoverer) Start(factory factory.Factory) {
-	k.podWatcher.builders.SetFactory(factory)
+func (k *kubernetesDiscoverer) Start(builders *discoverer.Builders) {
+	for _, builder := range k.builders {
+		builders.AddBuilder(builder)
+	}
+
+	for _, appender := range k.appenders {
+		builders.AddAppender(appender)
+	}
+
+	k.podWatcher.builders = builders
 	k.podWatcher.Run()
 }
 
-func (k kubernetesDiscoverer) Stop() {
+func (k *kubernetesDiscoverer) Stop() {
 	k.podWatcher.Stop()
 }
 
-func (k kubernetesDiscoverer) String() string { return "kubernetes" }
+func (k *kubernetesDiscoverer) String() string { return "kubernetes" }

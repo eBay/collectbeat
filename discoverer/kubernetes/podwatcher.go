@@ -6,11 +6,12 @@ import (
 	"time"
 
 	"github.com/ebay/collectbeat/discoverer"
-
-	"github.com/elastic/beats/libbeat/logp"
-
 	"github.com/ericchiang/k8s"
 	corev1 "github.com/ericchiang/k8s/api/v1"
+
+	"github.com/elastic/beats/libbeat/common"
+	"github.com/elastic/beats/libbeat/logp"
+	kubernetes "github.com/elastic/beats/libbeat/processors/add_kubernetes_metadata"
 )
 
 // PodWatcher is a controller that synchronizes Pods.
@@ -22,33 +23,80 @@ type PodWatcher struct {
 	lastResourceVersion string
 	ctx                 context.Context
 	stop                context.CancelFunc
-	podRunners          podRunners
+	pods                podMeta
 	builders            *discoverer.Builders
+	indexers            *kubernetes.Indexers
 }
 
-type podRunners struct {
-	sync.Mutex
-	pods map[string]*corev1.Pod
+type podMeta struct {
+	sync.RWMutex
+	pods        map[string]*kubernetes.Pod
+	annotations map[string]common.MapStr
+}
+
+func (p *podMeta) AddPod(name string, pod *kubernetes.Pod) {
+	p.Lock()
+	defer p.Unlock()
+
+	p.pods[name] = pod
+}
+
+func (p *podMeta) GetPod(name string) (*kubernetes.Pod, bool) {
+	p.RLock()
+	defer p.RUnlock()
+
+	val, ok := p.pods[name]
+	return val, ok
+}
+
+func (p *podMeta) DeletePod(name string) {
+	p.Lock()
+	defer p.Unlock()
+
+	delete(p.pods, name)
+}
+
+func (p *podMeta) AddPodAnnotations(name string, meta common.MapStr) {
+	p.Lock()
+	defer p.Unlock()
+
+	p.annotations[name] = meta
+}
+
+func (p *podMeta) GetPodAnnotations(name string) (common.MapStr, bool) {
+	p.RLock()
+	defer p.RUnlock()
+
+	val, ok := p.annotations[name]
+	return val, ok
+}
+
+func (p *podMeta) DeletePodAnnotations(name string) {
+	p.Lock()
+	defer p.Unlock()
+
+	delete(p.annotations, name)
 }
 
 type NodeOption struct{}
 
 // NewPodWatcher initializes the watcher factory to provide a local state of
 // runners from the cluster (filtered to the given host)
-func NewPodWatcher(kubeClient *k8s.Client, builders *discoverer.Builders, syncPeriod time.Duration, host string) *PodWatcher {
+func NewPodWatcher(kubeClient *k8s.Client, indexers *kubernetes.Indexers, syncPeriod time.Duration, host string) *PodWatcher {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &PodWatcher{
 		kubeClient:          kubeClient,
-		builders:            builders,
 		syncPeriod:          syncPeriod,
 		podQueue:            make(chan *corev1.Pod, 10),
 		nodeFilter:          k8s.QueryParam("fieldSelector", "spec.nodeName="+host),
 		lastResourceVersion: "0",
 		ctx:                 ctx,
 		stop:                cancel,
-		podRunners: podRunners{
-			pods: make(map[string]*corev1.Pod),
+		indexers:            indexers,
+		pods: podMeta{
+			pods:        make(map[string]*kubernetes.Pod),
+			annotations: make(map[string]common.MapStr),
 		},
 	}
 }
@@ -124,43 +172,45 @@ func (p *PodWatcher) Run() bool {
 	}
 }
 
-func (p *PodWatcher) onPodAdd(pod *corev1.Pod) {
-	p.podRunners.Lock()
-	defer p.podRunners.Unlock()
+func (p *PodWatcher) onPodAdd(pod *kubernetes.Pod) {
+	for _, m := range p.indexers.GetMetadata(pod) {
+		p.pods.AddPodAnnotations(m.Index, m.Data)
+	}
 
-	p.podRunners.pods[pod.Metadata.GetUid()] = pod
+	p.pods.AddPod(pod.Metadata.UID, pod)
 	p.builders.StartModuleRunners(pod)
 
 }
 
-func (p *PodWatcher) onPodUpdate(pod *corev1.Pod) {
-	oldPod := p.GetPod(pod.Metadata.GetUid())
-	if oldPod.Metadata.GetResourceVersion() != pod.Metadata.GetResourceVersion() {
+func (p *PodWatcher) onPodUpdate(pod *kubernetes.Pod) {
+	oldPod := p.GetPod(pod.Metadata.UID)
+	if oldPod.Metadata.ResourceVersion != pod.Metadata.ResourceVersion {
 		// Process the new pod changes
 		p.onPodDelete(oldPod)
 		p.onPodAdd(pod)
 	}
 }
 
-func (p *PodWatcher) onPodDelete(pod *corev1.Pod) {
-	p.podRunners.Lock()
-	defer p.podRunners.Unlock()
-
+func (p *PodWatcher) onPodDelete(pod *kubernetes.Pod) {
 	// This makes sure that we have an IP in hand in case the notification came in late
-	oldPo, ok := p.podRunners.pods[pod.Metadata.GetUid()]
+	oldPo, ok := p.pods.GetPod(pod.Metadata.UID)
 	if ok {
 		p.builders.StopModuleRunners(oldPo)
-		delete(p.podRunners.pods, pod.Metadata.GetUid())
+		p.pods.DeletePod(pod.Metadata.UID)
 	}
 
+	for _, index := range p.indexers.GetIndexes(pod) {
+		p.pods.DeletePodAnnotations(index)
+	}
 }
 
 func (p *PodWatcher) worker() {
-	for pod := range p.podQueue {
-		if pod.Metadata.GetDeletionTimestamp() != nil {
+	for po := range p.podQueue {
+		pod := kubernetes.GetPodMeta(po)
+		if pod.Metadata.DeletionTimestamp != "" {
 			p.onPodDelete(pod)
 		} else {
-			existing := p.GetPod(pod.Metadata.GetUid())
+			existing := p.GetPod(pod.Metadata.UID)
 			if existing != nil {
 				p.onPodUpdate(pod)
 			} else {
@@ -171,13 +221,22 @@ func (p *PodWatcher) worker() {
 
 }
 
-func (p *PodWatcher) GetPod(uid string) *corev1.Pod {
-	p.podRunners.Lock()
-	defer p.podRunners.Unlock()
-	return p.podRunners.pods[uid]
+func (p *PodWatcher) GetPod(uid string) *kubernetes.Pod {
+	po, _ := p.pods.GetPod(uid)
+	return po
 }
 
 func (p *PodWatcher) Stop() {
 	p.stop()
 	close(p.podQueue)
+}
+
+func (p *PodWatcher) GetMetaData(arg string) common.MapStr {
+	meta, ok := p.pods.GetPodAnnotations(arg)
+
+	if ok {
+		return meta
+	}
+
+	return nil
 }

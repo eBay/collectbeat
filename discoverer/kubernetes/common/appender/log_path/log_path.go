@@ -11,11 +11,10 @@ import (
 	"github.com/ebay/collectbeat/discoverer/common/appender"
 	"github.com/ebay/collectbeat/discoverer/common/registry"
 	dc "github.com/ebay/collectbeat/discoverer/docker/common"
+	"github.com/fsouza/go-dockerclient"
 
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/logp"
-
-	"github.com/fsouza/go-dockerclient"
 )
 
 const (
@@ -63,14 +62,8 @@ func (l *LogPathAppender) Append(configHolder *dcommon.ConfigHolder) {
 		return
 	}
 
-	rawConfigs := []map[string]interface{}{}
 	config := configHolder.Config
 	if config == nil {
-		return
-	}
-
-	err := config.Unpack(&rawConfigs)
-	if err != nil {
 		return
 	}
 
@@ -91,7 +84,7 @@ func (l *LogPathAppender) Append(configHolder *dcommon.ConfigHolder) {
 			if container.GraphDriver.Name == driver {
 				mergedDir, ok := container.GraphDriver.Data["MergedDir"]
 				if ok {
-					appendDockerStoragePath(rawConfigs, paths, mergedDir)
+					appendDockerStoragePath(config, paths, mergedDir)
 				}
 			}
 		case Aufs:
@@ -110,7 +103,7 @@ func (l *LogPathAppender) Append(configHolder *dcommon.ConfigHolder) {
 					}
 					fsId := string(bytes)
 					rootFs := fmt.Sprintf("%s/aufs/mnt/%s", l.rootDir, fsId)
-					appendDockerStoragePath(rawConfigs, paths, rootFs)
+					appendDockerStoragePath(config, paths, rootFs)
 				}
 			}
 		case DeviceMapper:
@@ -121,7 +114,7 @@ func (l *LogPathAppender) Append(configHolder *dcommon.ConfigHolder) {
 					if len(deviceNameParts) > 0 {
 						fsId := deviceNameParts[len(deviceNameParts)-1]
 						rootFs := fmt.Sprintf("%s/devicemapper/mnt/%s/rootfs", l.rootDir, fsId)
-						appendDockerStoragePath(rawConfigs, paths, rootFs)
+						appendDockerStoragePath(config, paths, rootFs)
 					}
 				}
 			}
@@ -130,26 +123,19 @@ func (l *LogPathAppender) Append(configHolder *dcommon.ConfigHolder) {
 		}
 	}
 
-	newCfg, err := common.NewConfigFrom(rawConfigs)
-	if err != nil {
-		return
-	}
-
-	configHolder.Config = newCfg
+	configHolder.Config = config
 }
-func appendDockerStoragePath(rawConfigs []map[string]interface{}, paths []string, mergedDir string) {
-	for i := 0; i < len(rawConfigs); i++ {
-		rawPaths, _ := rawConfigs[i]["paths"].([]interface{})
-		pathConf := []string{}
+func appendDockerStoragePath(rawConfig common.MapStr, paths []string, mergedDir string) {
+	rawPaths, _ := rawConfig["paths"].([]interface{})
+	pathConf := []string{}
 
-		for _, rawPath := range rawPaths {
-			pathConf = append(pathConf, fmt.Sprint(rawPath))
+	for _, rawPath := range rawPaths {
+		pathConf = append(pathConf, fmt.Sprint(rawPath))
+	}
+	if reflect.DeepEqual(pathConf, paths) == true {
+		for j := 0; j < len(pathConf); j++ {
+			pathConf[j] = fmt.Sprintf("%s%s", mergedDir, pathConf[j])
 		}
-		if reflect.DeepEqual(pathConf, paths) == true {
-			for j := 0; j < len(pathConf); j++ {
-				pathConf[j] = fmt.Sprintf("%s%s", mergedDir, pathConf[j])
-			}
-			rawConfigs[i]["paths"] = pathConf
-		}
+		rawConfig["paths"] = pathConf
 	}
 }

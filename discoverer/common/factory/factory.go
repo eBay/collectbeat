@@ -14,8 +14,8 @@ var factoryPlugins = make(map[string]FactoryConstructor)
 type Meta interface{}
 
 type Factory interface {
-	Start(config *dcommon.ConfigHolder) error
-	Stop(config *dcommon.ConfigHolder) error
+	Start(config []*dcommon.ConfigHolder) error
+	Stop(config []*dcommon.ConfigHolder) error
 	Restart(old, new *dcommon.ConfigHolder) error
 }
 
@@ -66,4 +66,19 @@ func InitFactory(
 	} else {
 		return nil, fmt.Errorf("Factory %s does not exist", conf.Name)
 	}
+}
+
+func GetConfigFromMapStr(config common.MapStr) *common.Config {
+	rawCfg := map[string]interface{}{}
+	for k, v := range config {
+		rawCfg[k] = v
+	}
+
+	cfg, err := common.NewConfigFrom(rawCfg)
+	if err != nil {
+		logp.Err("Unabel to pack config due to error: %v", err)
+		return nil
+	}
+
+	return cfg
 }

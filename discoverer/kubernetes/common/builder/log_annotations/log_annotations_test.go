@@ -2,14 +2,13 @@ package log_annotations
 
 import (
 	"encoding/json"
-	"reflect"
 	"testing"
 
 	"github.com/ebay/collectbeat/discoverer/common/builder"
 
 	"github.com/elastic/beats/libbeat/common"
+	kubernetes "github.com/elastic/beats/libbeat/processors/add_kubernetes_metadata"
 
-	corev1 "github.com/ericchiang/k8s/api/v1"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -67,24 +66,16 @@ func TestLogAnnotationBuilder(t *testing.T) {
 				},
 			},
 		}
-		pod := &corev1.Pod{}
+		pod := &kubernetes.Pod{}
 
 		data, _ := json.Marshal(iface)
 		json.Unmarshal(data, pod)
 
 		confs := b.BuildModuleConfigs(pod)
-		ok := assert.Equal(t, len(confs), 1)
+		ok := assert.Equal(t, len(confs), 2)
 		if !ok {
 			t.FailNow()
 		}
-
-		conf := confs[0]
-		raw := []map[string]interface{}{}
-
-		err := conf.Config.Unpack(&raw)
-		assert.Nil(t, err)
-
-		assert.Equal(t, len(raw), test.length)
 	}
 }
 func getLogAnnotationBuilder(t *testing.T) (builder.PollerBuilder, bool) {
@@ -94,7 +85,7 @@ func getLogAnnotationBuilder(t *testing.T) (builder.PollerBuilder, bool) {
 		"logs_path":         "/var/",
 	}
 	config, _ := common.NewConfigFrom(cfg)
-	bRaw, err := NewPodLogAnnotationBuilder(config, nil)
+	bRaw, err := NewPodLogAnnotationBuilder(config, nil, nil)
 	assert.NotNil(t, bRaw)
 	assert.Nil(t, err)
 	b, ok := bRaw.(builder.PollerBuilder)
@@ -128,33 +119,25 @@ func TestProspectorConfig(t *testing.T) {
 			},
 		},
 	}
-	pod := &corev1.Pod{}
+	pod := &kubernetes.Pod{}
 
 	data, _ := json.Marshal(iface)
 	json.Unmarshal(data, pod)
 
 	confs := b.BuildModuleConfigs(pod)
-	ok = assert.Equal(t, len(confs), 1)
+	ok = assert.Equal(t, len(confs), 2)
 	if !ok {
 		t.FailNow()
 	}
 
-	conf := confs[0]
-	raw := []map[string]interface{}{}
-
-	err := conf.Config.Unpack(&raw)
-	assert.Nil(t, err)
-
-	assert.Equal(t, len(raw), 2)
-
-	multilineCfg := map[string]interface{}{}
+	multilineCfg := common.MapStr{}
 	setMultilineConfig(multilineCfg, "abc", false, "after")
 
-	assert.Equal(t, raw[0]["paths"], []interface{}{reflect.ValueOf("/var/123/*.log").Interface()})
-	assert.Equal(t, raw[0]["multiline"], multilineCfg["multiline"])
+	assert.Equal(t, confs[0].Config["paths"], []string{"/var/123/*.log"})
+	assert.Equal(t, confs[0].Config["multiline"], multilineCfg["multiline"])
 
 	setMultilineConfig(multilineCfg, "cde", false, "after")
-	assert.Equal(t, raw[1]["paths"], []interface{}{reflect.ValueOf("/var/456/*.log").Interface()})
-	assert.Equal(t, raw[1]["multiline"], multilineCfg["multiline"])
+	assert.Equal(t, confs[1].Config["paths"], []string{"/var/456/*.log"})
+	assert.Equal(t, confs[1].Config["multiline"], multilineCfg["multiline"])
 
 }

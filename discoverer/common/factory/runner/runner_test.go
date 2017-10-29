@@ -5,30 +5,27 @@ import (
 	"time"
 
 	dcommon "github.com/ebay/collectbeat/discoverer/common"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/elastic/beats/libbeat/beat"
 	"github.com/elastic/beats/libbeat/common"
 	pubtest "github.com/elastic/beats/libbeat/publisher/testing"
 	"github.com/elastic/beats/metricbeat/mb"
 	"github.com/elastic/beats/metricbeat/mb/module"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestRunnerStartStop(t *testing.T) {
 	pubClient, f := newPubClientFactory()
 	pipeline := pubtest.PublisherWithClient(f())
 
-	config, err := common.NewConfigFrom(map[string]interface{}{
+	config := common.MapStr{
 		"module":     moduleName,
 		"metricsets": []string{eventFetcherName},
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
-
-	holder := &dcommon.ConfigHolder{
-		Config: config,
+	holder := []*dcommon.ConfigHolder{
+		{
+			Config: config,
+		},
 	}
 
 	fac := module.NewFactory(time.Second*1, pipeline)
@@ -53,14 +50,10 @@ func TestRunnerRestart(t *testing.T) {
 	pubClient, f := newPubClientFactory()
 	pipeline := pubtest.PublisherWithClient(f())
 
-	config, err := common.NewConfigFrom(map[string]interface{}{
+	config := common.MapStr{
 		"module":     moduleName,
 		"metricsets": []string{eventFetcherName},
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
-
 	holder := &dcommon.ConfigHolder{
 		Config: config,
 	}
@@ -76,7 +69,7 @@ func TestRunnerRestart(t *testing.T) {
 	err = runner.Restart(holder, holder)
 	assert.Nil(t, err)
 
-	err = runner.Stop(holder)
+	err = runner.Stop([]*dcommon.ConfigHolder{holder})
 	assert.Nil(t, err)
 }
 

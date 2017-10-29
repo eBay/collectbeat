@@ -25,6 +25,14 @@ func NewBuilder(builders []builder.Builder, appenders []appender.Appender) *Buil
 	}
 }
 
+func (b *Builders) AddBuilder(builder builder.Builder) {
+	b.builders = append(b.builders, builder)
+}
+
+func (b *Builders) AddAppender(a appender.Appender) {
+	b.appenders = append(b.appenders, a)
+}
+
 // AppendConfigs appends additional configs to a metricbeat config
 func (b *Builders) appendConfigs(configs []*dcommon.ConfigHolder) {
 	for _, config := range configs {
@@ -51,11 +59,9 @@ func (b *Builders) StartModuleRunners(obj interface{}) {
 			configs := bType.BuildModuleConfigs(obj)
 			b.appendConfigs(configs)
 
-			for _, config := range configs {
-				err := b.runnerFactory.Start(config)
-				if err != nil {
-					logp.Err("Module start up failed due to error %v", err)
-				}
+			err := b.runnerFactory.Start(configs)
+			if err != nil {
+				logp.Err("Module start up failed due to error %v", err)
 			}
 		case builder.PushBuilder:
 			// Stop the older push metricset before starting an added configuration
@@ -85,11 +91,9 @@ func (b *Builders) StopModuleRunners(obj interface{}) {
 			configs := bType.BuildModuleConfigs(obj)
 			b.appendConfigs(configs)
 
-			for _, config := range configs {
-				err := b.runnerFactory.Stop(config)
-				if err != nil {
-					logp.Err("Module stop failed due to error %v", err)
-				}
+			err := b.runnerFactory.Stop(configs)
+			if err != nil {
+				logp.Err("Module stop failed due to error %v", err)
 			}
 		case builder.PushBuilder:
 			// Stop the older push metricset before starting a metricset with removed configuration

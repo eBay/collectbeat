@@ -7,13 +7,13 @@ import (
 
 	dcommon "github.com/ebay/collectbeat/discoverer/common"
 	"github.com/ebay/collectbeat/discoverer/common/builder"
+	"github.com/ebay/collectbeat/discoverer/common/metagen"
 	"github.com/ebay/collectbeat/discoverer/common/registry"
 	kubecommon "github.com/ebay/collectbeat/discoverer/kubernetes/common"
 
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/logp"
-
-	corev1 "github.com/ericchiang/k8s/api/v1"
+	kubernetes "github.com/elastic/beats/libbeat/processors/add_kubernetes_metadata"
 )
 
 const (
@@ -42,10 +42,11 @@ type PodLogAnnotationBuilder struct {
 	logsPath            string
 	defaultNamespace    string
 	enableCustomLogPath bool
-	baseConfig          *common.Config
+	baseConfig          common.MapStr
+	metadata            metagen.MetaGen
 }
 
-func NewPodLogAnnotationBuilder(cfg *common.Config, _ builder.ClientInfo) (builder.Builder, error) {
+func NewPodLogAnnotationBuilder(cfg *common.Config, _ builder.ClientInfo, meta metagen.MetaGen) (builder.Builder, error) {
 	config := DefaultLogPathConfig()
 
 	err := cfg.Unpack(&config)
@@ -58,6 +59,7 @@ func NewPodLogAnnotationBuilder(cfg *common.Config, _ builder.ClientInfo) (build
 		baseConfig:       config.BaseProspectorConfig,
 		logsPath:         config.LogsPath,
 		defaultNamespace: config.DefaultNamespace,
+		metadata:         meta,
 	}, nil
 }
 
@@ -67,15 +69,13 @@ func (l *PodLogAnnotationBuilder) Name() string {
 
 func (l *PodLogAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon.ConfigHolder {
 	holders := []*dcommon.ConfigHolder{}
-	meta := dcommon.Meta{}
-	rawConfigs := []map[string]interface{}{}
-	pod, ok := obj.(*corev1.Pod)
+	pod, ok := obj.(*kubernetes.Pod)
 	if !ok {
 		logp.Err("Unable to cast %v to type *v1.Pod", obj)
 		return holders
 	}
 
-	debug("Entering pod %s for logs annotations builder", pod.Metadata.GetName())
+	debug("Entering pod %s for logs annotations builder", pod.Metadata.Name)
 
 	// Don't spin up a prospector unless pod goes into running state
 	if kubecommon.GetPodIp(pod) == "" && kubecommon.GetPodPhase(pod) != "Running" {
@@ -83,19 +83,13 @@ func (l *PodLogAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon
 	}
 
 	ns := l.getNamespace(pod)
+	for _, container := range pod.Status.ContainerStatuses {
+		name := container.Name
+		meta := dcommon.Meta{}
+		containerConfig := l.baseConfig.Clone()
 
-	for _, container := range pod.GetStatus().GetContainerStatuses() {
-		name := container.GetName()
-
-		containerConfig := map[string]interface{}{}
-		err := l.baseConfig.Unpack(containerConfig)
-		if err != nil {
-			logp.Err("Unable to unpack config for pod/container %s/%s due to error: %v", pod.GetMetadata().GetName(),
-				name, err)
-			return holders
-		}
-
-		cid := container.GetContainerID()
+		cid := container.ContainerID
+		var cmeta common.MapStr
 		var path string
 		if cid != "" {
 			parts := strings.Split(cid, "//")
@@ -103,6 +97,9 @@ func (l *PodLogAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon
 				cid = parts[1]
 				path = fmt.Sprintf("%s%s/*.log", l.logsPath, cid)
 
+			}
+			if l.metadata != nil {
+				cmeta = l.metadata.GetMetaData(cid)
 			}
 		} else {
 			continue
@@ -119,7 +116,6 @@ func (l *PodLogAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon
 			containerNegate := l.getNegate(pod, name)
 
 			setMultilineConfig(containerConfig, containerPattern, containerNegate, containerMatch)
-			setNamespace(ns, containerConfig)
 		}
 
 		if len(paths) == 0 {
@@ -130,25 +126,23 @@ func (l *PodLogAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon
 			containerConfig["paths"] = paths
 			meta[cid] = paths
 		}
+		setNamespace(ns, containerConfig)
+		if cmeta != nil {
+			kubecommon.SetKubeMetadata(cmeta, containerConfig)
+		}
 
-		rawConfigs = append(rawConfigs, containerConfig)
-		debug("Config for pod %s, container %s is %v", pod.Metadata.GetName(), name, containerConfig)
+		holder := &dcommon.ConfigHolder{
+			Config: containerConfig,
+			Meta:   meta,
+		}
+		holders = append(holders, holder)
+		debug("Config for pod %s, container %s is %v", pod.Metadata.Name, name, containerConfig)
 	}
 
-	config, err := common.NewConfigFrom(rawConfigs)
-	if err != nil {
-		logp.Err("Unable to pack config due to error: %v", err)
-		return holders
-	}
-	holder := &dcommon.ConfigHolder{
-		Config: config,
-		Meta:   meta,
-	}
-	holders = append(holders, holder)
 	return holders
 }
 
-func (l *PodLogAnnotationBuilder) getNamespace(pod *corev1.Pod) string {
+func (l *PodLogAnnotationBuilder) getNamespace(pod *kubernetes.Pod) string {
 	ns := kubecommon.GetAnnotationWithPrefix(namespace, l.prefix, pod)
 	if ns == "" {
 		return l.defaultNamespace
@@ -157,18 +151,18 @@ func (l *PodLogAnnotationBuilder) getNamespace(pod *corev1.Pod) string {
 	return ns
 }
 
-func (l *PodLogAnnotationBuilder) getPattern(pod *corev1.Pod, container string) string {
+func (l *PodLogAnnotationBuilder) getPattern(pod *kubernetes.Pod, container string) string {
 	return l.getAnnotationWithPrefixForContainer(pattern, container, pod)
 }
 
-func (l *PodLogAnnotationBuilder) getNegate(pod *corev1.Pod, container string) bool {
+func (l *PodLogAnnotationBuilder) getNegate(pod *kubernetes.Pod, container string) bool {
 	negateStr := l.getAnnotationWithPrefixForContainer(negate, container, pod)
 	negateBool, _ := strconv.ParseBool(negateStr)
 
 	return negateBool
 }
 
-func (l *PodLogAnnotationBuilder) getMatch(pod *corev1.Pod, container string) string {
+func (l *PodLogAnnotationBuilder) getMatch(pod *kubernetes.Pod, container string) string {
 	matchStr := l.getAnnotationWithPrefixForContainer(match, container, pod)
 	if matchStr == "" {
 		return "after"
@@ -177,7 +171,7 @@ func (l *PodLogAnnotationBuilder) getMatch(pod *corev1.Pod, container string) st
 	return matchStr
 }
 
-func (l *PodLogAnnotationBuilder) getPaths(pod *corev1.Pod, container string) []string {
+func (l *PodLogAnnotationBuilder) getPaths(pod *kubernetes.Pod, container string) []string {
 	if container == "" {
 		return []string{}
 	}
@@ -195,7 +189,7 @@ func (l *PodLogAnnotationBuilder) getPaths(pod *corev1.Pod, container string) []
 	return output
 }
 
-func (l *PodLogAnnotationBuilder) getAnnotationWithPrefixForContainer(key, container string, pod *corev1.Pod) string {
+func (l *PodLogAnnotationBuilder) getAnnotationWithPrefixForContainer(key, container string, pod *kubernetes.Pod) string {
 	if container == "" {
 		return kubecommon.GetAnnotationWithPrefix(key, l.prefix+"/", pod)
 	}
@@ -203,41 +197,37 @@ func (l *PodLogAnnotationBuilder) getAnnotationWithPrefixForContainer(key, conta
 	return kubecommon.GetAnnotationWithPrefix(key, l.prefix+"."+container+"/", pod)
 }
 
-func defaultBaseProspectorConfig() *common.Config {
-	base := map[string]interface{}{
+func defaultBaseProspectorConfig() common.MapStr {
+	base := common.MapStr{
 		"type":    "log",
 		"enabled": true,
 	}
-	config, err := common.NewConfigFrom(base)
-	if err != nil {
-		return common.NewConfig()
-	}
 
-	return config
+	return base
 }
 
-func setNamespace(ns string, config map[string]interface{}) {
+func setNamespace(ns string, config common.MapStr) {
 	if ns != "" {
 		if _, ok := config["fields"]; !ok {
-			config["fields"] = map[string]interface{}{
+			config["fields"] = common.MapStr{
 				"namespace": ns,
 			}
 		} else {
-			config["fields"].(map[string]interface{})["namespace"] = ns
+			config["fields"].(common.MapStr)["namespace"] = ns
 		}
 		config["fields_under_root"] = true
 	}
 }
 
-func setMultilineConfig(config map[string]interface{}, pattern string, negate bool, match string) {
-	config["multiline"] = map[string]interface{}{
+func setMultilineConfig(config common.MapStr, pattern string, negate bool, match string) {
+	config["multiline"] = common.MapStr{
 		"pattern": pattern,
 		"negate":  negate,
 		"match":   match,
 	}
 }
-func setJsonLog(containerConfig map[string]interface{}) {
-	containerConfig["json"] = map[string]interface{}{
+func setJsonLog(containerConfig common.MapStr) {
+	containerConfig["json"] = common.MapStr{
 		"message_key":     "log",
 		"keys_under_root": true,
 	}

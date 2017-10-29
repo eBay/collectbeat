@@ -6,19 +6,20 @@ import (
 
 	"github.com/ebay/collectbeat/discoverer"
 
+	factory "github.com/ebay/collectbeat/discoverer/common/factory"
+	"github.com/ebay/collectbeat/discoverer/common/registry"
+	"github.com/ebay/collectbeat/discoverer/kubernetes/common/builder/metrics_annotations"
+	"github.com/ebay/collectbeat/discoverer/kubernetes/common/builder/metrics_secret"
+	"github.com/pkg/errors"
+
 	"github.com/elastic/beats/libbeat/beat"
 	"github.com/elastic/beats/libbeat/common"
 	mbeater "github.com/elastic/beats/metricbeat/beater"
-	"github.com/elastic/beats/metricbeat/mb/module"
-
-	"github.com/pkg/errors"
 
 	//Add collectbeat specific discoverers
-	factory "github.com/ebay/collectbeat/discoverer/common/factory"
-	"github.com/ebay/collectbeat/discoverer/common/registry"
 	_ "github.com/ebay/collectbeat/discoverer/kubernetes"
-	"github.com/ebay/collectbeat/discoverer/kubernetes/common/builder/metrics_annotations"
-	"github.com/ebay/collectbeat/discoverer/kubernetes/common/builder/metrics_secret"
+
+	_ "github.com/elastic/beats/metricbeat/processor/add_kubernetes_metadata"
 )
 
 // Collectbeat implements the Beater interface.
@@ -67,31 +68,52 @@ func New(b *beat.Beat, rawConfig *common.Config) (beat.Beater, error) {
 func (bt *Collectbeat) Run(b *beat.Beat) error {
 	var wg sync.WaitGroup
 
-	// Start up all discoverers
-	f := module.NewFactory(bt.config.MaxStartDelay, b.Publisher)
-	factoryRawConf := map[string]interface{}{
-		"name": "runner",
+	if bt.config.ConfigModules == nil {
+		rawProspectorConfig := map[string]interface{}{
+			"enabled": true,
+			"path":    "./modules.d/*.yml",
+			"reload": map[string]interface{}{
+				"enabled": true,
+				"period":  "5s",
+			},
+		}
+
+		conf, err := common.NewConfigFrom(rawProspectorConfig)
+		if err != nil {
+			return fmt.Errorf("Unable to create prospectors config")
+		}
+		bt.config.ConfigModules = conf
 	}
 
-	factoryCfg, err := common.NewConfigFrom(factoryRawConf)
-	if err != nil {
-		return fmt.Errorf("Factory config creation failed with error: %v", err)
-	}
+	if len(bt.discoverers) != 0 {
+		factoryRawConf := map[string]interface{}{
+			"name":            "cfgfile",
+			"reloader_config": bt.config.ConfigModules,
+		}
 
-	runner, err := factory.InitFactory(factoryCfg, f)
-	if err != nil {
-		return err
-	}
+		factoryCfg, err := common.NewConfigFrom(factoryRawConf)
+		if err != nil {
+			return fmt.Errorf("Factory config creation failed with error: %v", err)
+		}
 
-	for _, disc := range bt.discoverers {
-		d := disc
-		go d.Discoverer.Start(runner.Factory)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-bt.done
-			d.Discoverer.Stop()
-		}()
+		runner, err := factory.InitFactory(factoryCfg, nil)
+		if err != nil {
+			return err
+		}
+
+		builder := &discoverer.Builders{}
+		builder.SetFactory(runner.Factory)
+
+		for _, disc := range bt.discoverers {
+			d := disc
+			go d.Discoverer.Start(builder)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-bt.done
+				d.Discoverer.Stop()
+			}()
+		}
 	}
 
 	// Start up metricbeat modules
