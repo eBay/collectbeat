@@ -82,6 +82,12 @@ func (p *PodAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon.Co
 	}
 
 	debug("Entering pod %s for annotations builder", pod.Metadata.Name)
+
+	if kubecommon.IsNoOp(p.Prefix, pod) == true {
+		debug("Skipping pod %s for metrics annotations builder", pod.Metadata.Name)
+		return holders
+	}
+
 	ip := kubecommon.GetPodIp(pod)
 	if ip == "" {
 		return holders

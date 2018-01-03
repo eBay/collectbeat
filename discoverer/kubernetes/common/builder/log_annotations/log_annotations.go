@@ -77,6 +77,11 @@ func (l *PodLogAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon
 
 	debug("Entering pod %s for logs annotations builder", pod.Metadata.Name)
 
+	if kubecommon.IsNoOp(l.prefix, pod) == true {
+		debug("Skipping pod %s for logs annotations builder", pod.Metadata.Name)
+		return holders
+	}
+
 	// Don't spin up a prospector unless pod goes into running state
 	if kubecommon.GetPodIp(pod) == "" && kubecommon.GetPodPhase(pod) != "Running" {
 		return holders

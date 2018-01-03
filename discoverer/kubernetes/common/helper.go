@@ -3,6 +3,8 @@ package common
 import (
 	"fmt"
 
+	"strconv"
+
 	"github.com/elastic/beats/libbeat/common"
 	kubernetes "github.com/elastic/beats/libbeat/processors/add_kubernetes_metadata"
 )
@@ -20,6 +22,12 @@ func GetAnnotation(key string, pod *kubernetes.Pod) string {
 	}
 
 	return ""
+}
+
+func IsNoOp(prefix string, pod *kubernetes.Pod) bool {
+	s := GetAnnotation(fmt.Sprintf("%s%s", prefix, "disable"), pod)
+	b, _ := strconv.ParseBool(s)
+	return b
 }
 
 func GetAnnotationWithPrefix(key, prefix string, pod *kubernetes.Pod) string {

@@ -124,6 +124,11 @@ func (g *GraphiteAnnotationBuilder) AddModuleConfig(obj interface{}) *dcommon.Co
 		return holder
 	}
 
+	if kubecommon.IsNoOp(g.Prefix, pod) == true {
+		debug("Skipping pod %s for graphite annotations builder", pod.Metadata.Name)
+		return holder
+	}
+
 	templ := g.getTemplateFromPod(pod)
 
 	if templ == nil {

@@ -32,6 +32,10 @@ const (
 	SecretsBuilder = "metrics_secret"
 )
 
+var (
+	debug = logp.MakeDebug(SecretsBuilder)
+)
+
 func init() {
 	registry.BuilderRegistry.AddBuilder(SecretsBuilder, NewSecretBuilder)
 }
@@ -86,6 +90,11 @@ func (s *SecretBuilder) BuildModuleConfigs(obj interface{}) []*dcommon.ConfigHol
 	pod, ok := obj.(*kubernetes.Pod)
 	if !ok {
 		logp.Err("Unable to cast %v to type *v1.Pod", obj)
+		return holders
+	}
+
+	if kubecommon.IsNoOp(s.Prefix, pod) == true {
+		debug("Skipping pod %s for metrics annotations builder", pod.Metadata.Name)
 		return holders
 	}
 
