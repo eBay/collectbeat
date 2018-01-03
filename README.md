@@ -1,3 +1,4 @@
+[![Build Status](https://travis-ci.org/eBay/collectbeat.svg?branch=master)](https://travis-ci.org/eBay/collectbeat)
 # collectbeat
 
 
