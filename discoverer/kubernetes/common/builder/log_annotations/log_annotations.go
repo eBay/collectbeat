@@ -77,7 +77,7 @@ func (l *PodLogAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon
 
 	debug("Entering pod %s for logs annotations builder", pod.Metadata.Name)
 
-	if kubecommon.IsNoOp(l.prefix, pod) == true {
+	if kubecommon.IsNoOp(l.prefix+"/", pod) == true {
 		debug("Skipping pod %s for logs annotations builder", pod.Metadata.Name)
 		return holders
 	}
@@ -90,6 +90,12 @@ func (l *PodLogAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon
 	ns := l.getNamespace(pod)
 	for _, container := range pod.Status.ContainerStatuses {
 		name := container.Name
+
+		if kubecommon.IsNoOp(l.prefix+"."+name+"/", pod) == true {
+			debug("Skipping pod %s and container %s for logs annotations builder", pod.Metadata.Name, name)
+			continue
+		}
+
 		meta := dcommon.Meta{}
 		containerConfig := l.baseConfig.Clone()
 
