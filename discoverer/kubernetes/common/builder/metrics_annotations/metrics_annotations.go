@@ -143,7 +143,7 @@ func (p *PodAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon.Co
 		}
 	}
 
-	debug("Config for pod %s is %v", pod.Metadata.Name, moduleConfig)
+	debug("config for pod %s is %v", pod.Metadata.Name, moduleConfig)
 
 	holder := &dcommon.ConfigHolder{
 		Config: moduleConfig,
