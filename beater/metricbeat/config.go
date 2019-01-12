@@ -6,7 +6,7 @@ import (
 	"github.com/elastic/beats/libbeat/common"
 )
 
-// Config is the root of the Collecbeat configuration hierarchy.
+// config is the root of the Collecbeat configuration hierarchy.
 type Config struct {
 	// Discoverers is a list of discoverer specific configurationd data.
 	Discoverers map[string]*common.Config `config:"discovery"`

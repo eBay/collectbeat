@@ -230,6 +230,12 @@ type: keyword
 
 Kubernetes namespace
 
+[float]
+=== `kubernetes.node.name`
+
+type: keyword
+
+Kubernetes node name
 
 [float]
 === `kubernetes.labels`

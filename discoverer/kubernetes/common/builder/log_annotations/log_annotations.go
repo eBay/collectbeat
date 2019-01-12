@@ -147,7 +147,7 @@ func (l *PodLogAnnotationBuilder) BuildModuleConfigs(obj interface{}) []*dcommon
 			Meta:   meta,
 		}
 		holders = append(holders, holder)
-		debug("Config for pod %s, container %s is %v", pod.Metadata.Name, name, containerConfig)
+		debug("config for pod %s, container %s is %v", pod.Metadata.Name, name, containerConfig)
 	}
 
 	return holders
